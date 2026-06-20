@@ -7,13 +7,18 @@ let scanning = true;
 const BACKEND_URL = "https://ar-object-scanner-backend.onrender.com/analyze";
 
 async function startCamera() {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: { exact: "environment" }
-    }
-  });
-  video.srcObject = stream;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" }
+      }
+    });
+    video.srcObject = stream;
+  } catch (err) {
+    console.error("Camera error:", err);
+  }
 }
+
 
 
 
