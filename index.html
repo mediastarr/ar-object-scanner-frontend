@@ -2,21 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AR Object Scanner</title>
-  <meta name="viewport" content="width=600, height=600, initial-scale=1.0">
   <link rel="stylesheet" href="styles.css">
+
+  <!-- TensorFlow + ONNX Runtime -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
 </head>
+
 <body>
-  <div id="ar-panel">
-    <video id="camera" autoplay playsinline></video>
 
-    <div id="mode-bar">
-      <button data-mode="general">General</button>
-      <button data-mode="plant">Plant</button>
-      <button data-mode="food">Food</button>
-    </div>
+  <video id="camera" autoplay playsinline></video>
 
-    <div id="card"></div>
+  <div id="card"></div>
+
+  <div id="mode-bar">
+    <button data-mode="general">General</button>
+    <button data-mode="plant">Plant</button>
+    <button data-mode="food">Food</button>
   </div>
 
   <script src="app.js"></script>
