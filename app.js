@@ -3,15 +3,17 @@ const card = document.getElementById("card");
 let currentMode = "general";
 let scanning = true;
 
-// Replace with your Render backend URL:
 const BACKEND_URL = "https://ar-object-scanner-backend.onrender.com/analyze";
 
+let model = null; // COCO-SSD model
+
+// ------------------------------
+// 1. Start camera
+// ------------------------------
 async function startCamera() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: "environment" }
-      }
+      video: { facingMode: { ideal: "environment" } }
     });
     video.srcObject = stream;
   } catch (err) {
@@ -19,37 +21,67 @@ async function startCamera() {
   }
 }
 
-
-
-
-function captureFrame() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 320;
-  canvas.height = 240;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg");
+// ------------------------------
+// 2. Load COCO-SSD model
+// ------------------------------
+async function loadModel() {
+  console.log("Loading COCO-SSD...");
+  model = await cocoSsd.load();
+  console.log("Model loaded.");
 }
 
-async function scanFrame() {
-  if (!scanning || video.readyState < 2) return;
+// ------------------------------
+// 3. Local detection loop
+// ------------------------------
+async function detectFrame() {
+  if (!scanning || !model || video.readyState < 2) return;
 
-  const image = captureFrame();
+  const predictions = await model.detect(video);
+  if (!predictions.length) return;
 
+  const best = predictions[0]; // highest confidence
+  const label = best.class;
+  const confidence = best.score;
+
+  // Show instant local AR card
+  renderLocalCard({ label, confidence });
+
+  // Enrich with backend AI
+  enrichLabel(label);
+}
+
+// ------------------------------
+// 4. Backend enrichment
+// ------------------------------
+async function enrichLabel(label) {
   try {
     const res = await fetch(BACKEND_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image, mode: currentMode })
+      body: JSON.stringify({ label, mode: currentMode })
     });
 
     const data = await res.json();
     renderCard(data);
   } catch (e) {
-    console.log("Scan error:", e);
+    console.error("Enrichment failed:", e);
   }
 }
 
+// ------------------------------
+// 5. Local AR card (instant)
+// ------------------------------
+function renderLocalCard({ label, confidence }) {
+  card.innerHTML = `
+    <div class="card-title">${label}</div>
+    <div class="card-sub">${Math.round(confidence * 100)}% sure</div>
+    <div class="card-desc">Scanning for details...</div>
+  `;
+}
+
+// ------------------------------
+// 6. Enriched AR card (AI + Wiki)
+// ------------------------------
 function renderCard(result) {
   if (!result || !result.label) return;
 
@@ -65,27 +97,39 @@ function renderCard(result) {
   card.innerHTML = `
     <img class="card-image" src="${result.preview || ""}" alt="${result.label}">
     <div class="card-title">${result.label}</div>
-    <div class="card-sub">${Math.round((result.confidence || 0) * 100)}% sure</div>
+    <div class="card-sub">AI Enriched</div>
     <div class="card-desc">${result.description}</div>
     ${nutrition}
   `;
 }
 
-// Mode switching
+// ------------------------------
+// 7. Mode switching
+// ------------------------------
 document.querySelectorAll("#mode-bar button").forEach(btn => {
   btn.onclick = () => {
     currentMode = btn.dataset.mode;
   };
 });
 
-// EMG gesture substitute (tap = toggle scanning)
+// ------------------------------
+// 8. EMG gesture substitute
+// ------------------------------
 document.body.onclick = () => {
   scanning = !scanning;
 };
 
+// ------------------------------
+// 9. Main
+// ------------------------------
 async function main() {
   await startCamera();
-  setInterval(scanFrame, 800);
+  await loadModel();
+
+  video.onloadeddata = () => {
+    console.log("Video ready — starting detection loop");
+    setInterval(detectFrame, 600);
+  };
 }
 
 main();
