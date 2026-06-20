@@ -66,40 +66,37 @@ function postprocessYolo(outputs) {
   const numClasses = 80;
 
   for (let i = 0; i < numBoxes; i++) {
-    const offset = i * (numClasses + 5);
+    const offset = i * (numClasses + 4);
 
     const x = preds[offset + 0];
     const y = preds[offset + 1];
     const w = preds[offset + 2];
     const h = preds[offset + 3];
-    const obj = preds[offset + 4];
 
-    if (obj < 0.4) continue;
-
-    // find best class
+    // class scores start at offset + 4
     let bestClass = -1;
     let bestScore = 0;
 
     for (let c = 0; c < numClasses; c++) {
-      const score = preds[offset + 5 + c];
+      const score = preds[offset + 4 + c];
       if (score > bestScore) {
         bestScore = score;
         bestClass = c;
       }
     }
 
-    const confidence = obj * bestScore;
-    if (confidence < 0.45) continue;
+    if (bestScore < 0.45) continue;
 
     results.push({
       label: YOLO_CLASSES[bestClass],
-      confidence,
+      confidence: bestScore,
       bbox: [x, y, w, h]
     });
   }
 
   return results;
 }
+
 
 
 const YOLO_CLASSES = [
