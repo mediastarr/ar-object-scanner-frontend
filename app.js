@@ -5,7 +5,7 @@ let scanning = true;
 
 const BACKEND_URL = "https://ar-object-scanner-backend.onrender.com/analyze";
 
-let model = null; // COCO-SSD model
+let yoloSession = null;
 
 // ------------------------------
 // 1. Start camera
@@ -22,36 +22,106 @@ async function startCamera() {
 }
 
 // ------------------------------
-// 2. Load COCO-SSD model
+// 2. Load YOLOv8-nano
 // ------------------------------
-async function loadModel() {
-  console.log("Loading COCO-SSD...");
-  model = await cocoSsd.load();
-  console.log("Model loaded.");
+async function loadYolo() {
+  console.log("Loading YOLOv8-nano...");
+  yoloSession = await ort.InferenceSession.create("/models/yolov8n.onnx", {
+    executionProviders: ["wasm"]
+  });
+  console.log("YOLOv8-nano loaded");
 }
 
 // ------------------------------
-// 3. Local detection loop
+// 3. Preprocess → YOLO tensor
 // ------------------------------
-async function detectFrame() {
-  if (!scanning || !model || video.readyState < 2) return;
+function preprocessToYoloTensor(imgData) {
+  const { data, width, height } = imgData;
+  const size = 320;
 
-  const predictions = await model.detect(video);
-  if (!predictions.length) return;
+  const tensor = new Float32Array(1 * 3 * size * size);
+  let idx = 0;
 
-  const best = predictions[0]; // highest confidence
-  const label = best.class;
-  const confidence = best.score;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const px = (y * width + x) * 4;
+      tensor[idx] = data[px] / 255;
+      tensor[idx + size * size] = data[px + 1] / 255;
+      tensor[idx + 2 * size * size] = data[px + 2] / 255;
+      idx++;
+    }
+  }
 
-  // Show instant local AR card
-  renderLocalCard({ label, confidence });
-
-  // Enrich with backend AI
-  enrichLabel(label);
+  return new ort.Tensor("float32", tensor, [1, 3, size, size]);
 }
 
 // ------------------------------
-// 4. Backend enrichment
+// 4. Postprocess YOLO output
+// ------------------------------
+function postprocessYolo(outputs) {
+  const preds = outputs.output0.data;
+  const results = [];
+
+  for (let i = 0; i < preds.length; i += 6) {
+    const [x, y, w, h, conf, cls] = preds.slice(i, i + 6);
+    if (conf < 0.45) continue;
+
+    results.push({
+      label: YOLO_CLASSES[Math.round(cls)],
+      confidence: conf,
+      bbox: [x, y, w, h]
+    });
+  }
+
+  return results;
+}
+
+const YOLO_CLASSES = [
+  "person","bicycle","car","motorcycle","airplane","bus","train","truck",
+  "boat","traffic light","fire hydrant","stop sign","parking meter","bench",
+  "bird","cat","dog","horse","sheep","cow","elephant","bear","zebra","giraffe",
+  "backpack","umbrella","handbag","tie","suitcase","frisbee","skis","snowboard",
+  "sports ball","kite","baseball bat","baseball glove","skateboard","surfboard",
+  "tennis racket","bottle","wine glass","cup","fork","knife","spoon","bowl",
+  "banana","apple","sandwich","orange","broccoli","carrot","hot dog","pizza",
+  "donut","cake","chair","couch","potted plant","bed","dining table","toilet",
+  "tv","laptop","mouse","remote","keyboard","cell phone","microwave","oven",
+  "toaster","sink","refrigerator","book","clock","vase","scissors","teddy bear",
+  "hair drier","toothbrush"
+];
+
+// ------------------------------
+// 5. 3D AR card transform
+// ------------------------------
+function apply3DTransform(bbox) {
+  const [x, y, w, h] = bbox;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+
+  const nx = (cx / video.videoWidth) - 0.5;
+  const ny = (cy / video.videoHeight) - 0.5;
+
+  const depthZ = -40;
+  const tiltX = ny * -20;
+  const tiltY = nx * 20;
+
+  card.style.transform =
+    `translate3d(-50%, -50%, ${depthZ}px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
+}
+
+// ------------------------------
+// 6. Local AR card
+// ------------------------------
+function renderLocalCard({ label, confidence }) {
+  card.innerHTML = `
+    <div class="card-title">${label}</div>
+    <div class="card-sub">${Math.round(confidence * 100)}% sure</div>
+    <div class="card-desc">Scanning for details...</div>
+  `;
+}
+
+// ------------------------------
+// 7. Backend enrichment
 // ------------------------------
 async function enrichLabel(label) {
   try {
@@ -69,18 +139,7 @@ async function enrichLabel(label) {
 }
 
 // ------------------------------
-// 5. Local AR card (instant)
-// ------------------------------
-function renderLocalCard({ label, confidence }) {
-  card.innerHTML = `
-    <div class="card-title">${label}</div>
-    <div class="card-sub">${Math.round(confidence * 100)}% sure</div>
-    <div class="card-desc">Scanning for details...</div>
-  `;
-}
-
-// ------------------------------
-// 6. Enriched AR card (AI + Wiki)
+// 8. Final enriched AR card
 // ------------------------------
 function renderCard(result) {
   if (!result || !result.label) return;
@@ -104,7 +163,33 @@ function renderCard(result) {
 }
 
 // ------------------------------
-// 7. Mode switching
+// 9. Detection loop
+// ------------------------------
+async function detectFrame() {
+  if (!scanning || !yoloSession || video.readyState < 2) return;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 320;
+  canvas.height = 320;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  const imgData = ctx.getImageData(0, 0, 320, 320);
+  const input = preprocessToYoloTensor(imgData);
+
+  const outputs = await yoloSession.run({ images: input });
+  const detections = postprocessYolo(outputs);
+  if (!detections.length) return;
+
+  const best = detections[0];
+
+  apply3DTransform(best.bbox);
+  renderLocalCard(best);
+  enrichLabel(best.label);
+}
+
+// ------------------------------
+// 10. Mode switching
 // ------------------------------
 document.querySelectorAll("#mode-bar button").forEach(btn => {
   btn.onclick = () => {
@@ -113,22 +198,22 @@ document.querySelectorAll("#mode-bar button").forEach(btn => {
 });
 
 // ------------------------------
-// 8. EMG gesture substitute
+// 11. EMG gesture simulation
 // ------------------------------
-document.body.onclick = () => {
-  scanning = !scanning;
-};
+document.addEventListener("keydown", e => {
+  if (e.key === " ") scanning = !scanning;
+});
 
 // ------------------------------
-// 9. Main
+// 12. Main
 // ------------------------------
 async function main() {
   await startCamera();
-  await loadModel();
+  await loadYolo();
 
   video.onloadeddata = () => {
-    console.log("Video ready — starting detection loop");
-    setInterval(detectFrame, 600);
+    console.log("Video ready — YOLO loop starting");
+    setInterval(detectFrame, 120);
   };
 }
 
