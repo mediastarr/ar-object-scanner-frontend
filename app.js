@@ -201,6 +201,8 @@ async function detectFrame() {
   const input = preprocessToYoloTensor(imgData);
 
   const outputs = await yoloSession.run({ images: input });
+  console.log("YOLO output dims:", outputs.output0.dims);
+  console.log("YOLO output length:", outputs.output0.data.length);
   const detections = postprocessYolo(outputs);
   if (!detections.length) return;
 
