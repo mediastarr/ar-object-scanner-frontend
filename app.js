@@ -4,13 +4,13 @@ let currentMode = "general";
 let scanning = true;
 
 // Replace with your Render backend URL:
-const BACKEND_URL = const BACKEND_URL = "https://ar-object-scanner-backend.onrender.com/analyze";
-
+const BACKEND_URL = "https://ar-object-scanner-backend.onrender.com/analyze";
 
 async function startCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
 }
+
 
 function captureFrame() {
   const canvas = document.createElement("canvas");
