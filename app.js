@@ -7,9 +7,14 @@ let scanning = true;
 const BACKEND_URL = "https://ar-object-scanner-backend.onrender.com/analyze";
 
 async function startCamera() {
-  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: {
+      facingMode: { exact: "environment" }
+    }
+  });
   video.srcObject = stream;
 }
+
 
 
 function captureFrame() {
